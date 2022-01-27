@@ -1,7 +1,6 @@
 package com.wiqer.redis;
 
 
-
 import com.wiqer.redis.aof.Aof;
 import com.wiqer.redis.channel.DefaultChannelSelectStrategy;
 import com.wiqer.redis.channel.LocalChannelOption;
@@ -22,52 +21,47 @@ import org.apache.log4j.Logger;
 
 import java.net.InetSocketAddress;
 
-/**
- * @author Administrator
- */
-public class MyRedisServer implements RedisServer
-{
+public class MyRedisServer implements RedisServer {
     private static final Logger LOGGER = Logger.getLogger(MyRedisServer.class);
-    private final RedisCore redisCore =  new RedisCoreImpl();
-    private final ServerBootstrap serverBootstrap=new ServerBootstrap();
-    private final  EventExecutorGroup redisSingleEventExecutor;
+    private final RedisCore redisCore = new RedisCoreImpl();
+    private final ServerBootstrap serverBootstrap = new ServerBootstrap();
+    private final EventExecutorGroup redisSingleEventExecutor;
     private final LocalChannelOption channelOption;
     private Aof aof;
-    public MyRedisServer()
-    {
-        channelOption=new DefaultChannelSelectStrategy().select();
-        this.redisSingleEventExecutor=new NioEventLoopGroup(1);
+
+    public MyRedisServer() {
+        channelOption = new DefaultChannelSelectStrategy().select();
+        this.redisSingleEventExecutor = new NioEventLoopGroup(1);
     }
-    public MyRedisServer(LocalChannelOption channelOption)
-    {
-        this.channelOption=channelOption;
-        this.redisSingleEventExecutor=new NioEventLoopGroup(1);
+
+    public MyRedisServer(LocalChannelOption channelOption) {
+        this.channelOption = channelOption;
+        this.redisSingleEventExecutor = new NioEventLoopGroup(1);
     }
-    public static void main(String[] args)
-    {
+
+    public static void main(String[] args) {
         new MyRedisServer(new SingleSelectChannelOption()).start();
     }
 
     @Override
-    public void start()
-    {
-        if(PropertiesUtil.getAppendOnly()) {
-            aof=new Aof(this.redisCore);
+    public void start() {
+        if (PropertiesUtil.getAppendOnly()) {
+            aof = new Aof(this.redisCore);
         }
         start0();
     }
 
     @Override
-    public void close()
-    {
+    public void close() {
         try {
             channelOption.boss().shutdownGracefully();
             channelOption.selectors().shutdownGracefully();
             redisSingleEventExecutor.shutdownGracefully();
-        }catch (Exception ignored) {
-            LOGGER.warn( "Exception!", ignored);
+        } catch (Exception ignored) {
+            LOGGER.warn("Exception!", ignored);
         }
     }
+
     public void start0() {
 
 
@@ -76,11 +70,7 @@ public class MyRedisServer implements RedisServer
                 .handler(new LoggingHandler(LogLevel.INFO))
                 .option(ChannelOption.SO_BACKLOG, 1024)
                 .option(ChannelOption.SO_REUSEADDR, true)
-                //false
-                .option(ChannelOption.SO_KEEPALIVE, PropertiesUtil.getTcpKeepAlive())
-//                .childOption(ChannelOption.TCP_NODELAY, true)
-//                .childOption(ChannelOption.SO_SNDBUF, 65535)
-//                .childOption(ChannelOption.SO_RCVBUF, 65535)
+                .childOption(ChannelOption.SO_KEEPALIVE, PropertiesUtil.getTcpKeepAlive())
                 .localAddress(new InetSocketAddress(PropertiesUtil.getNodeAddress(), PropertiesUtil.getNodePort()))
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
@@ -92,7 +82,7 @@ public class MyRedisServer implements RedisServer
 //                                /*心跳,管理长连接*/
 //                                new IdleStateHandler(0, 0, 20)
                         );
-                        channelPipeline.addLast(redisSingleEventExecutor,new CommandHandler(redisCore)) ;
+                        channelPipeline.addLast(redisSingleEventExecutor, new CommandHandler(redisCore));
                     }
                 });
 
@@ -100,16 +90,14 @@ public class MyRedisServer implements RedisServer
             ChannelFuture sync = serverBootstrap.bind().sync();
             LOGGER.info(sync.channel().localAddress().toString());
         } catch (InterruptedException e) {
-//
-            LOGGER.warn( "Interrupted!", e);
+            LOGGER.warn("Interrupted!", e);
             throw new RuntimeException(e);
         }
 
     }
 
     @Override
-    public RedisCore getRedisCore()
-    {
+    public RedisCore getRedisCore() {
         return redisCore;
     }
 }

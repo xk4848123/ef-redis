@@ -4,9 +4,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
-/**
- * @author lilan
- */
 public class BytesWrapper implements Comparable<BytesWrapper>
 {
     static final Charset CHARSET = StandardCharsets.UTF_8;

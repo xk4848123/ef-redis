@@ -3,13 +3,6 @@ package com.wiqer.redis.resp;
 import com.wiqer.redis.datatype.BytesWrapper;
 import io.netty.buffer.ByteBuf;
 
-import java.nio.ByteBuffer;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-/**
- * @author Administrator
- */
 public interface Resp {
 
     static void write(Resp resp, ByteBuf buffer) {
@@ -41,7 +34,7 @@ public interface Resp {
             buffer.writeByte(RespType.R.getCode());
             buffer.writeByte(RespType.N.getCode());
         } else if (resp instanceof BulkString) {
-            buffer.writeByte(RespType.BULK.getCode());
+//            buffer.writeByte(RespType.B ULK.getCode());
             BytesWrapper content = ((BulkString) resp).getContent();
             if (content == null) {
                 buffer.writeByte(RespType.ERROR.getCode());
@@ -84,17 +77,9 @@ public interface Resp {
         }
     }
 
-    /**
-     * 无法解码压测客户端
-     *
-     * @param buffer
-     * @return
-     */
     static Resp decode(ByteBuf buffer) {
-        // System.out.println(new String(buffer.array(),UTF_8));
         if (buffer.readableBytes() <= 0) {
             new IllegalStateException("没有读取到完整的命令");
-            ;
         }
         char c = (char) buffer.readByte();
         if (c == RespType.STATUS.getCode()) {
@@ -128,16 +113,11 @@ public interface Resp {
             }
             return new RespArray(array);
         } else {
-            /**
-             * A~Z
-             */
             if (c > 64 && c < 91) {
                 return new SimpleString(c + getString(buffer));
             } else {
                 return decode(buffer);
             }
-
-            //throw new IllegalArgumentException("意外地命令");
         }
     }
 
