@@ -2,9 +2,9 @@ package com.wiqer.redis;
 
 
 import com.wiqer.redis.aof.Aof;
-import com.wiqer.redis.channel.DefaultChannelSelectStrategy;
 import com.wiqer.redis.channel.LocalChannelOption;
 import com.wiqer.redis.channel.single.SingleSelectChannelOption;
+import com.wiqer.redis.netty.channel.socket.NioSingleServerSocketChannel;
 import com.wiqer.redis.util.PropertiesUtil;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;
@@ -26,15 +26,10 @@ public class MyRedisServer implements RedisServer {
     private final RedisCore redisCore = new RedisCoreImpl();
     private final ServerBootstrap serverBootstrap = new ServerBootstrap();
     private final EventExecutorGroup redisSingleEventExecutor;
-    private final LocalChannelOption channelOption;
+    private final LocalChannelOption<NioSingleServerSocketChannel> channelOption;
     private Aof aof;
 
-    public MyRedisServer() {
-        channelOption = new DefaultChannelSelectStrategy().select();
-        this.redisSingleEventExecutor = new NioEventLoopGroup(1);
-    }
-
-    public MyRedisServer(LocalChannelOption channelOption) {
+    public MyRedisServer(LocalChannelOption<NioSingleServerSocketChannel> channelOption) {
         this.channelOption = channelOption;
         this.redisSingleEventExecutor = new NioEventLoopGroup(1);
     }
@@ -57,14 +52,12 @@ public class MyRedisServer implements RedisServer {
             channelOption.boss().shutdownGracefully();
             channelOption.selectors().shutdownGracefully();
             redisSingleEventExecutor.shutdownGracefully();
-        } catch (Exception ignored) {
-            LOGGER.warn("Exception!", ignored);
+        } catch (Throwable t) {
+            LOGGER.warn("Exception!", t);
         }
     }
 
     public void start0() {
-
-
         serverBootstrap.group(channelOption.boss(), channelOption.selectors())
                 .channel(channelOption.getChannelClass())
                 .handler(new LoggingHandler(LogLevel.INFO))
@@ -74,7 +67,7 @@ public class MyRedisServer implements RedisServer {
                 .localAddress(new InetSocketAddress(PropertiesUtil.getNodeAddress(), PropertiesUtil.getNodePort()))
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
-                    protected void initChannel(SocketChannel socketChannel) throws Exception {
+                    protected void initChannel(SocketChannel socketChannel)  {
                         ChannelPipeline channelPipeline = socketChannel.pipeline();
                         channelPipeline.addLast(
                                 new ResponseEncoder(),
