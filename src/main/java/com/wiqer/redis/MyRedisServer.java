@@ -63,8 +63,6 @@ public class MyRedisServer implements RedisServer {
     }
 
     public void start0() {
-
-
         serverBootstrap.group(channelOption.boss(), channelOption.selectors())
                 .channel(channelOption.getChannelClass())
                 .handler(new LoggingHandler(LogLevel.INFO))
