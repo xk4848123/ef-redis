@@ -22,12 +22,6 @@ public class RedisList implements RedisData {
         this.timeout = timeout;
     }
 
-    public void lpush(BytesWrapper... values) {
-        for (BytesWrapper value : values) {
-            deque.addFirst(value);
-        }
-    }
-
     public int size() {
         return deque.size();
     }

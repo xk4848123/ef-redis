@@ -11,6 +11,7 @@ import com.wiqer.redis.util.Format;
 import com.wiqer.redis.util.PropertiesUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import org.apache.log4j.Logger;
 import sun.misc.Cleaner;
 
 import java.io.File;
@@ -23,6 +24,7 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -31,7 +33,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class Aof {
 
-    private static final org.apache.log4j.Logger LOGGER = org.apache.log4j.Logger.getLogger(Aof.class);
+    private static final Logger LOGGER = Logger.getLogger(Aof.class);
 
     private static final String suffix = ".aof";
 
@@ -45,7 +47,7 @@ public class Aof {
 
     private final String fileName = PropertiesUtil.getAofPath();
 
-    private final LinkedBlockingQueue<Resp> runtimeRespQueue = new LinkedBlockingQueue<>();
+    private final BlockingQueue<Resp> runtimeRespQueue = new LinkedBlockingQueue<>();
 
     private final ScheduledThreadPoolExecutor persistenceExecutor = new ScheduledThreadPoolExecutor(1, r -> new Thread(r, "Aof_Single_Thread"));
 
@@ -75,7 +77,7 @@ public class Aof {
 
     public void start() {
         persistenceExecutor.execute(this::pickupDiskDataAllSegment);
-        persistenceExecutor.scheduleAtFixedRate(() -> downDiskAllSegment(), 10, 5, TimeUnit.SECONDS);
+        persistenceExecutor.scheduleAtFixedRate(this::downDiskAllSegment, 10, 5, TimeUnit.SECONDS);
     }
 
     public void close() {
