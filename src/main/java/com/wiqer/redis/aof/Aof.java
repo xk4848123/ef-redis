@@ -37,15 +37,11 @@ public class Aof {
 
     private static final String suffix = ".aof";
 
-    /**
-     * 1,经过大量测试，使用过3年以上机械磁盘的最大性能为26
-     * 2,存盘偏移量，控制单个持久化文件大小
-     */
-    public static final int shiftBit = 26;
+    public static final int shiftBit = 20;
 
     private Long aofPutIndex = 0L;
 
-    private final String fileName = PropertiesUtil.getAofPath();
+    private final String dir = PropertiesUtil.getAofPath();
 
     private final BlockingQueue<Resp> runtimeRespQueue = new LinkedBlockingQueue<>();
 
@@ -53,22 +49,26 @@ public class Aof {
 
     private final RedisCore redisCore;
 
-    /**
-     * 读写锁
-     */
     final ReadWriteLock reentrantLock = new ReentrantReadWriteLock();
 
 
     public Aof(RedisCore redisCore) {
         this.redisCore = redisCore;
-        File file = new File(this.fileName + suffix);
+        createAofFileDir();
+        start();
+    }
+
+    private void createAofFileDir() {
+        File file = new File(this.dir + suffix);
         if (!file.isDirectory()) {
             File parentFile = file.getParentFile();
             if (null != parentFile && !parentFile.exists()) {
-                parentFile.mkdirs();
+                boolean ok = parentFile.mkdirs();
+                if (ok) {
+                    LOGGER.info("create aof file dir : " + dir);
+                }
             }
         }
-        start();
     }
 
     public void put(Resp resp) {
@@ -77,20 +77,17 @@ public class Aof {
 
     public void start() {
         persistenceExecutor.execute(this::pickupDiskDataAllSegment);
-        persistenceExecutor.scheduleAtFixedRate(this::downDiskAllSegment, 10, 5, TimeUnit.SECONDS);
+        persistenceExecutor.scheduleAtFixedRate(this::downDiskAllSegment, 10, 1, TimeUnit.SECONDS);
     }
 
     public void close() {
         try {
             persistenceExecutor.shutdown();
         } catch (Throwable t) {
-            LOGGER.warn("error: ", t);
+            LOGGER.error("error: ", t);
         }
     }
 
-    /**
-     * 面向过程分段存储所有的数据
-     */
     public void downDiskAllSegment() {
         if (reentrantLock.writeLock().tryLock()) {
             try {
@@ -100,14 +97,14 @@ public class Aof {
                 while (segmentId != (aofPutIndex >> shiftBit)) {
                     segmentId = (aofPutIndex >> shiftBit);
                     ByteBuf bufferPolled = PooledByteBufAllocator.DEFAULT.buffer(1024);
-                    RandomAccessFile randomAccessFile = new RandomAccessFile(fileName + "_" + segmentId + suffix, "rw");
+                    RandomAccessFile randomAccessFile = new RandomAccessFile(dir + "_" + segmentId + suffix, "rw");
                     FileChannel channel = randomAccessFile.getChannel();
                     long len = channel.size();
                     int putIndex = Format.uintNBit(aofPutIndex, shiftBit);
                     long baseOffset = aofPutIndex - putIndex;
 
-                    if (len - putIndex < 1L << (shiftBit - 2)) {
-                        len = 1L << (shiftBit - 2);
+                    if (len == 0) {
+                        len = 1L << shiftBit;
                     }
                     MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_WRITE, 0, len);
                     do {
@@ -120,17 +117,13 @@ public class Aof {
                         }
                         Resp.write(resp, bufferPolled);
                         int respLen = bufferPolled.readableBytes();
-                        if ((mappedByteBuffer.capacity() <= respLen + putIndex)) {
+                        int capacity = mappedByteBuffer.capacity();
+                        if ((respLen + putIndex >= capacity)) {
+                            bufferPolled.release();
                             clean(mappedByteBuffer);
-                            len += 1L << (shiftBit - 3);
-                            mappedByteBuffer = channel.map(FileChannel.MapMode.READ_WRITE, 0, len);
-                            if (len > (1 << shiftBit)) {
-                                bufferPolled.release();
-                                clean(mappedByteBuffer);
-                                aofPutIndex = baseOffset + (1 << shiftBit);
-                                randomAccessFile.close();
-                                break;
-                            }
+                            randomAccessFile.close();
+                            aofPutIndex = baseOffset + (1 << shiftBit);
+                            break;
                         }
 
                         while (respLen > 0) {
@@ -138,20 +131,9 @@ public class Aof {
                             mappedByteBuffer.put(putIndex++, bufferPolled.readByte());
                         }
                         aofPutIndex = baseOffset + putIndex;
-                        runtimeRespQueue.poll();
+//                        runtimeRespQueue.poll();
 
                         bufferPolled.clear();
-                        if (len - putIndex < (1L << (shiftBit - 3))) {
-                            len += 1L << (shiftBit - 3);
-                            clean(mappedByteBuffer);
-                            if (len > (1 << shiftBit)) {
-                                bufferPolled.release();
-                                aofPutIndex = baseOffset + (1 << shiftBit);
-                                randomAccessFile.close();
-                                break;
-                            }
-                            mappedByteBuffer = channel.map(FileChannel.MapMode.READ_WRITE, 0, len);
-                        }
                     } while (true);
 
                 }
@@ -169,9 +151,6 @@ public class Aof {
         }
     }
 
-    /**
-     * 分段拾起所有数据
-     */
     public void pickupDiskDataAllSegment() {
         reentrantLock.writeLock().lock();
         try {
@@ -180,7 +159,7 @@ public class Aof {
             Segment:
             while (segmentId != (aofPutIndex >> shiftBit)) {
                 segmentId = (aofPutIndex >> shiftBit);
-                RandomAccessFile randomAccessFile = new RandomAccessFile(fileName + "_" + segmentId + suffix, "r");
+                RandomAccessFile randomAccessFile = new RandomAccessFile(dir + "_" + segmentId + suffix, "r");
                 FileChannel channel = randomAccessFile.getChannel();
                 long len = channel.size();
                 int putIndex = Format.uintNBit(aofPutIndex, shiftBit);
@@ -194,6 +173,13 @@ public class Aof {
                     Resp resp;
                     try {
                         resp = Resp.decode(bufferPolled);
+                        if (resp == null){
+                            bufferPolled.release();
+                            clean(mappedByteBuffer);
+                            aofPutIndex = baseOffset + (1 << shiftBit);
+                            randomAccessFile.close();
+                            break;
+                        }
                     } catch (Throwable t) {
                         clean(mappedByteBuffer);
                         randomAccessFile.close();
@@ -206,8 +192,9 @@ public class Aof {
                     assert writeCommand != null;
                     writeCommand.handle(this.redisCore);
                     putIndex = bufferPolled.readerIndex();
+                    System.out.println(putIndex);
                     aofPutIndex = putIndex + baseOffset;
-                    if (putIndex > (1 << shiftBit)) {
+                    if (putIndex >= (1 << shiftBit)) {
                         bufferPolled.release();
                         clean(mappedByteBuffer);
                         aofPutIndex = baseOffset + (1 << shiftBit);
@@ -258,5 +245,19 @@ public class Aof {
             }
             return null;
         });
+    }
+
+    public static void main(String[] args) {
+
+
+//        ByteBuf bufferPolled = PooledByteBufAllocator.DEFAULT.buffer(1024);
+//
+//        bufferPolled.writeByte(1);
+//        bufferPolled.writeByte(2);
+//        System.out.println(bufferPolled.readerIndex());
+//        byte b = bufferPolled.readByte();
+//        System.out.println(b);
+//        System.out.println(bufferPolled.readerIndex());
+        System.out.println(1 << 20);
     }
 }

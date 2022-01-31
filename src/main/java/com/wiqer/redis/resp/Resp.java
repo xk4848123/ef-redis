@@ -94,6 +94,8 @@ public interface Resp {
                 array[i] = decode(buffer);
             }
             return new RespArray(array);
+        } else if (c == '\0') {
+            return null;
         } else {
             if (c > 64 && c < 91) {
                 return new SimpleString(c + getString(buffer));
