@@ -246,18 +246,4 @@ public class Aof {
             return null;
         });
     }
-
-    public static void main(String[] args) {
-
-
-//        ByteBuf bufferPolled = PooledByteBufAllocator.DEFAULT.buffer(1024);
-//
-//        bufferPolled.writeByte(1);
-//        bufferPolled.writeByte(2);
-//        System.out.println(bufferPolled.readerIndex());
-//        byte b = bufferPolled.readByte();
-//        System.out.println(b);
-//        System.out.println(bufferPolled.readerIndex());
-        System.out.println(1 << 20);
-    }
 }
