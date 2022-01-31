@@ -40,16 +40,17 @@ public class CommandDecoder extends LengthFieldBasedFrameDecoder {
                 if (!(resp instanceof RespArray || resp instanceof SimpleString)) {
                     throw new IllegalStateException("客户端发送的命令应该只能是Resp Array 和 单行命令 类型");
                 }
-                Command command = null;
+                Command command;
 
                 if (resp instanceof RespArray) {
                     command = CommandFactory.from((RespArray) resp);
-                } else if (resp instanceof SimpleString) {
+                } else {
                     command = CommandFactory.from((SimpleString) resp);
 
                 }
                 if (command == null) {
                     //取出命令
+                    assert resp instanceof RespArray;
                     ctx.writeAndFlush(new Errors("unsupport command:" + ((BulkString) ((RespArray) resp).getArray()[0]).getContent().toUtf8String()));
                 } else {
                     if (aof != null && command instanceof WriteCommand) {
@@ -57,9 +58,9 @@ public class CommandDecoder extends LengthFieldBasedFrameDecoder {
                     }
                     return command;
                 }
-            } catch (Exception e) {
+            } catch (Throwable t) {
                 in.readerIndex(mark);
-                LOGGER.error("解码命令", e);
+                LOGGER.error("解码命令", t);
                 break;
             }
         }
