@@ -37,7 +37,7 @@ public class Aof {
 
     private static final String suffix = ".aof";
 
-    public static final int shiftBit = 20;
+    public static final int shiftBit = 26;
 
     private Long aofPutIndex = 0L;
 
@@ -89,11 +89,17 @@ public class Aof {
     }
 
     public void downDiskAllSegment() {
+        //尝试获取锁
         if (reentrantLock.writeLock().tryLock()) {
             try {
                 long segmentId = -1;
 
                 Segment:
+                /* 初始化时segmentId为-1
+                 * aofPutIndex的低26位代表单个分段aof文件的putIndex
+                 * aofPutIndex的高38位代表对应的分段segmentId
+                 * segmentId != (aofPutIndex >> shiftBit) 当aofPutIndex跳到下一个分段时成立
+                 */
                 while (segmentId != (aofPutIndex >> shiftBit)) {
                     segmentId = (aofPutIndex >> shiftBit);
                     ByteBuf bufferPolled = PooledByteBufAllocator.DEFAULT.buffer(1024);
@@ -104,10 +110,14 @@ public class Aof {
                     long baseOffset = aofPutIndex - putIndex;
 
                     if (len == 0) {
+                        //创建一个新的aof分段文件时len=0，设置len = 1L << shiftBit
                         len = 1L << shiftBit;
                     }
+
+                    //创建文件内存映射
                     MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_WRITE, 0, len);
                     do {
+                        //获取runtimeRespQueue对头Resp对象
                         Resp resp = runtimeRespQueue.peek();
                         if (resp == null) {
                             bufferPolled.release();
@@ -115,25 +125,31 @@ public class Aof {
                             randomAccessFile.close();
                             break Segment;
                         }
+                        //解析Resp对象写入ByteBuff
                         Resp.write(resp, bufferPolled);
                         int respLen = bufferPolled.readableBytes();
                         int capacity = mappedByteBuffer.capacity();
+                        //判断写入文件后是否超过设定的size
                         if ((respLen + putIndex >= capacity)) {
                             bufferPolled.release();
                             clean(mappedByteBuffer);
                             randomAccessFile.close();
+                            //将aofPutIndex设置到下一个分段文件的开始位置
                             aofPutIndex = baseOffset + (1 << shiftBit);
+                            //跳到Segment，到下一个分段继续处理阻塞队列中的Resp对象
                             break;
                         }
 
+                        //写入文件
                         while (respLen > 0) {
                             respLen--;
                             mappedByteBuffer.put(putIndex++, bufferPolled.readByte());
                         }
-                        aofPutIndex = baseOffset + putIndex;
-//                        runtimeRespQueue.poll();
 
-                        bufferPolled.clear();
+                        aofPutIndex = baseOffset + putIndex;
+                        //消费成功后删除掉对头的Resp对象
+                        runtimeRespQueue.poll();
+
                     } while (true);
 
                 }
@@ -152,23 +168,35 @@ public class Aof {
     }
 
     public void pickupDiskDataAllSegment() {
+        //获取锁
         reentrantLock.writeLock().lock();
         try {
             long segmentId = -1;
 
             Segment:
+            /* 初始化时segmentId为-1
+             * aofPutIndex的低26位代表单个分段aof文件的putIndex
+             * aofPutIndex的高38位代表对应的分段segmentId
+             * segmentId != (aofPutIndex >> shiftBit) 当aofPutIndex跳到下一个分段时成立
+             */
             while (segmentId != (aofPutIndex >> shiftBit)) {
+                //获取分段Id
                 segmentId = (aofPutIndex >> shiftBit);
                 RandomAccessFile randomAccessFile = new RandomAccessFile(dir + "_" + segmentId + suffix, "r");
                 FileChannel channel = randomAccessFile.getChannel();
                 long len = channel.size();
+                //相对当前segment的写入位置
                 int putIndex = Format.uintNBit(aofPutIndex, shiftBit);
+                //当前segment的基址位置
                 long baseOffset = aofPutIndex - putIndex;
 
                 MappedByteBuffer mappedByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, len);
                 ByteBuf bufferPolled = PooledByteBufAllocator.DEFAULT.buffer((int) len);
+
+                //文件中的命令写入ByteBuf，用于Resp.decode
                 bufferPolled.writeBytes(mappedByteBuffer);
 
+                //处理ByteBuf的命令写入内存中
                 do {
                     Resp resp;
                     try {
@@ -176,8 +204,10 @@ public class Aof {
                         if (resp == null){
                             bufferPolled.release();
                             clean(mappedByteBuffer);
+                            //设置aofPutIndex到下一个分段的开始位置
                             aofPutIndex = baseOffset + (1 << shiftBit);
                             randomAccessFile.close();
+                            //跳到Segment，到下一个分段继续处理文件命令
                             break;
                         }
                     } catch (Throwable t) {
@@ -190,14 +220,16 @@ public class Aof {
                     Command command = CommandFactory.from((RespArray) resp);
                     WriteCommand writeCommand = (WriteCommand) command;
                     assert writeCommand != null;
+                    //写入内存中
                     writeCommand.handle(this.redisCore);
                     putIndex = bufferPolled.readerIndex();
-                    System.out.println(putIndex);
                     aofPutIndex = putIndex + baseOffset;
                     if (putIndex >= (1 << shiftBit)) {
                         bufferPolled.release();
                         clean(mappedByteBuffer);
+                        //设置aofPutIndex到下一个分段的开始位置
                         aofPutIndex = baseOffset + (1 << shiftBit);
+                        //跳到Segment，到下一个分段继续处理文件命令
                         randomAccessFile.close();
                         break;
                     }
