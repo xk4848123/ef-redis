@@ -43,20 +43,4 @@ public class CommandFactory {
             }
         }
     }
-
-    public static Command from(SimpleString string) {
-        String commandName = string.getContent().toLowerCase();
-        Supplier<Command> supplier = map.get(commandName);
-        if (supplier == null) {
-            LOGGER.warn("traceId:" + TRACEID.currentTraceId() + " 不支持的命令：" + commandName);
-            return null;
-        } else {
-            try {
-                return supplier.get();
-            } catch (Throwable t) {
-                LOGGER.warn("traceId:" + TRACEID.currentTraceId() + " 不支持的命令：" + commandName + ",数据读取异常", t);
-                return null;
-            }
-        }
-    }
 }

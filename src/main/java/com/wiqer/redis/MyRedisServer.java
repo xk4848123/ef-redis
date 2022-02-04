@@ -15,6 +15,7 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.concurrent.EventExecutorGroup;
 import org.apache.log4j.Logger;
 
@@ -71,9 +72,7 @@ public class MyRedisServer implements RedisServer {
                         ChannelPipeline channelPipeline = socketChannel.pipeline();
                         channelPipeline.addLast(
                                 new ResponseEncoder(),
-                                new CommandDecoder(aof)//,
-//                                /*心跳,管理长连接*/
-//                                new IdleStateHandler(0, 0, 20)
+                                new CommandDecoder(aof)
                         );
                         channelPipeline.addLast(redisSingleEventExecutor, new CommandHandler(redisCore));
                     }
@@ -86,7 +85,6 @@ public class MyRedisServer implements RedisServer {
             LOGGER.warn("Interrupted!", e);
             throw new RuntimeException(e);
         }
-
     }
 
     @Override

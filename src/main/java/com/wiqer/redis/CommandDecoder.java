@@ -31,38 +31,25 @@ public class CommandDecoder extends LengthFieldBasedFrameDecoder {
 
     @Override
     public Object decode(ChannelHandlerContext ctx, ByteBuf in) throws Exception {
-
         TRACEID.newTraceId();
-        while (in.readableBytes() != 0) {
-            int mark = in.readerIndex();
-            try {
-                Resp resp = Resp.decode(in);
-                if (!(resp instanceof RespArray || resp instanceof SimpleString)) {
-                    throw new IllegalStateException("客户端发送的命令应该只能是Resp Array 和 单行命令 类型");
-                }
-                Command command;
-
-                if (resp instanceof RespArray) {
-                    command = CommandFactory.from((RespArray) resp);
-                } else {
-                    command = CommandFactory.from((SimpleString) resp);
-
-                }
-                if (command == null) {
-                    //取出命令
-                    assert resp instanceof RespArray;
-                    ctx.writeAndFlush(new Errors("unsupport command:" + ((BulkString) ((RespArray) resp).getArray()[0]).getContent().toUtf8String()));
-                } else {
-                    if (aof != null && command instanceof WriteCommand) {
-                        aof.put(resp);
-                    }
-                    return command;
-                }
-            } catch (Throwable t) {
-                in.readerIndex(mark);
-                LOGGER.error("解码命令", t);
-                break;
+        try {
+            Resp resp = Resp.decode(in);
+            if (!(resp instanceof RespArray)) {
+                throw new IllegalStateException("客户端发送的命令格式有问题");
             }
+            Command command;
+            command = CommandFactory.from((RespArray) resp);
+
+            if (command == null) {
+                ctx.writeAndFlush(new Errors("unsupport command:" + ((BulkString) ((RespArray) resp).getArray()[0]).getContent().toUtf8String()));
+            } else {
+                if (aof != null && command instanceof WriteCommand) {
+                    aof.put(resp);
+                }
+                return command;
+            }
+        } catch (Throwable t) {
+            LOGGER.error("解码命令", t);
         }
         return null;
     }
