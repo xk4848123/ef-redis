@@ -26,6 +26,14 @@ public class RedisList implements RedisData {
         return deque.size();
     }
 
+    public BytesWrapper lpop() {
+        return deque.removeFirst();
+    }
+
+    public BytesWrapper rpop() {
+        return deque.removeLast();
+    }
+
     public void lpush(List<BytesWrapper> values) {
         for (BytesWrapper value : values) {
             deque.addFirst(value);
@@ -39,6 +47,20 @@ public class RedisList implements RedisData {
     }
 
     public List<BytesWrapper> lrang(int start, int end) {
+        if (start < 0) {
+            if ((-start) > deque.size()) {
+                start = 0;
+            } else {
+                start = start + deque.size();
+            }
+        }
+        if (end < 0) {
+            if ((-end) > deque.size()) {
+                end = 0;
+            } else {
+                end = end + deque.size();
+            }
+        }
         return deque.stream().skip(start).limit(end - start >= 0 ? end - start + 1 : 0).collect(Collectors.toList());
     }
 

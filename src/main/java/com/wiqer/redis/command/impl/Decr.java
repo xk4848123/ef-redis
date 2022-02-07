@@ -8,56 +8,49 @@ import com.wiqer.redis.datatype.RedisData;
 import com.wiqer.redis.datatype.RedisString;
 import com.wiqer.redis.resp.BulkString;
 import com.wiqer.redis.resp.Resp;
+import com.wiqer.redis.resp.RespInt;
 import com.wiqer.redis.resp.SimpleString;
 import com.wiqer.redis.util.Format;
 import io.netty.channel.ChannelHandlerContext;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-public class Decr implements WriteCommand
-{
+public class Decr implements WriteCommand {
     private BytesWrapper key;
 
     @Override
-    public CommandType type()
-    {
+    public CommandType type() {
         return CommandType.decr;
     }
 
     @Override
-    public void setContent(Resp[] array)
-    {
+    public void setContent(Resp[] array) {
         key = ((BulkString) array[1]).getContent();
     }
 
     @Override
-    public void handle(ChannelHandlerContext ctx, RedisCore redisCore)
-    {
+    public void handle(ChannelHandlerContext ctx, RedisCore redisCore) {
         RedisData redisData = redisCore.get(key);
-        if (redisData == null)
-        {
+        if (redisData == null) {
             RedisString stringData = new RedisString();
-            BytesWrapper bytesWrapper=new BytesWrapper("0".getBytes(UTF_8));
+            BytesWrapper bytesWrapper = new BytesWrapper("1".getBytes(UTF_8));
             stringData.setValue(bytesWrapper);
+            stringData.setTimeout(-1);
             redisCore.put(key, stringData);
-            ctx.writeAndFlush(new BulkString(bytesWrapper));
-        }
-        else if (redisData instanceof RedisString)
-        {
+            ctx.writeAndFlush(new RespInt(1));
+        } else if (redisData instanceof RedisString) {
             try {
                 BytesWrapper value = ((RedisString) redisData).getValue();
-                long v= Format.parseLong(value.getByteArray(),10);
+                long v = Format.parseLong(value.getByteArray(), 10);
                 --v;
-                BytesWrapper bytesWrapper= new BytesWrapper(Format.toByteArray(v));
+                BytesWrapper bytesWrapper = new BytesWrapper(Format.toByteArray(v));
                 ((RedisString) redisData).setValue(bytesWrapper);
-                ctx.writeAndFlush(new BulkString(bytesWrapper));
-            }catch (NumberFormatException exception){
+                ctx.writeAndFlush(new RespInt((int) v));
+            } catch (NumberFormatException exception) {
                 ctx.writeAndFlush(new SimpleString("value is not an integer or out of range"));
             }
 
-        }
-        else
-        {
+        } else {
             throw new UnsupportedOperationException();
         }
     }
@@ -65,23 +58,18 @@ public class Decr implements WriteCommand
     @Override
     public void handle(RedisCore redisCore) {
         RedisData redisData = redisCore.get(key);
-        if (redisData == null)
-        {
+        if (redisData == null) {
             RedisString stringData = new RedisString(new BytesWrapper("0".getBytes(UTF_8)));
             redisCore.put(key, stringData);
-        }
-        else if (redisData instanceof RedisString)
-        {
+        } else if (redisData instanceof RedisString) {
             try {
                 BytesWrapper value = ((RedisString) redisData).getValue();
-                long v= Format.parseLong(value.getByteArray(),10);
+                long v = Format.parseLong(value.getByteArray(), 10);
                 --v;
                 ((RedisString) redisData).setValue(new BytesWrapper(Format.toByteArray(v)));
-            }catch (NumberFormatException exception){
+            } catch (NumberFormatException ignored) {
             }
-        }
-        else
-        {
+        } else {
             throw new UnsupportedOperationException();
         }
     }
